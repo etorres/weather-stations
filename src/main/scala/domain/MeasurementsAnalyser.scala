@@ -14,38 +14,32 @@ object MeasurementsAnalyser:
     Files[IO]
       .readUtf8Lines(measurementsPath)
       .take(maxRows)
-      .flatMap(measurementFrom)
-      .evalMap(temperatureStats(_, statsRef))
+      .evalMap(updateStatsWith(_, statsRef))
 
-  private def measurementFrom(line: String): Stream[IO, Measurement] =
+  private def updateStatsWith(line: String, statsRef: Ref[IO, Map[String, Stats]]) =
     import scala.language.unsafeNulls
     line.split(";", 2).toList match
-      case stationName :: temperature :: Nil =>
-        Stream.emit(Measurement(stationName, temperature.toDouble))
+      case stationName :: measurement :: Nil =>
+        val temperature = measurement.toDouble
+        for
+          stationNameToStats <- statsRef.get
+          currentStats = stationNameToStats.getOrElse(
+            stationName,
+            Stats(0L, temperature, temperature, 0.0d),
+          )
+          _ <- statsRef.update(
+            _ + (stationName -> Stats(
+              count = currentStats.count + 1L,
+              min = Math.min(currentStats.min, temperature),
+              max = Math.max(currentStats.max, temperature),
+              sum = currentStats.sum + temperature,
+            )),
+          )
+        yield ()
       case _ =>
-        Stream.raiseError(
+        IO.raiseError(
           IllegalArgumentException(
             s"""Expected line format: <string: station name>;<double: measurement>.
                | Instead found line: $line""".stripMargin.replaceAll("\\R", ""),
           ),
         )
-
-  private def temperatureStats(
-      measurement: Measurement,
-      statsRef: Ref[IO, Map[String, Stats]],
-  ): IO[Unit] =
-    for
-      stationNameToStats <- statsRef.get
-      currentStats = stationNameToStats.getOrElse(
-        measurement.stationName,
-        Stats(0L, measurement.temperature, measurement.temperature, 0.0d),
-      )
-      _ <- statsRef.update(
-        _ + (measurement.stationName -> Stats(
-          count = currentStats.count + 1L,
-          min = Math.min(currentStats.min, measurement.temperature),
-          max = Math.max(currentStats.max, measurement.temperature),
-          sum = currentStats.sum + measurement.temperature,
-        )),
-      )
-    yield ()

@@ -17,10 +17,11 @@ object MeasurementsAnalyser:
       .flatMap(measurementFrom)
       .evalMap(temperatureStats(_, statsRef))
 
-  private def measurementFrom(line: String): Stream[IO, (String, Double)] =
+  private def measurementFrom(line: String): Stream[IO, Measurement] =
     import scala.language.unsafeNulls
     line.split(";", 2).toList match
-      case stationName :: temperature :: Nil => Stream.emit((stationName, temperature.toDouble))
+      case stationName :: temperature :: Nil =>
+        Stream.emit(Measurement(stationName, temperature.toDouble))
       case _ =>
         Stream.raiseError(
           IllegalArgumentException(
@@ -30,22 +31,21 @@ object MeasurementsAnalyser:
         )
 
   private def temperatureStats(
-      measurement: (String, Double),
+      measurement: Measurement,
       statsRef: Ref[IO, Map[String, Stats]],
   ): IO[Unit] =
-    val (stationName, temperature) = measurement
     for
       stationNameToStats <- statsRef.get
       currentStats = stationNameToStats.getOrElse(
-        stationName,
-        Stats(0L, temperature, temperature, 0.0d),
+        measurement.stationName,
+        Stats(0L, measurement.temperature, measurement.temperature, 0.0d),
       )
       _ <- statsRef.update(
-        _ + (stationName -> Stats(
+        _ + (measurement.stationName -> Stats(
           count = currentStats.count + 1L,
-          min = Math.min(currentStats.min, temperature),
-          max = Math.max(currentStats.max, temperature),
-          sum = currentStats.sum + temperature,
+          min = Math.min(currentStats.min, measurement.temperature),
+          max = Math.max(currentStats.max, measurement.temperature),
+          sum = currentStats.sum + measurement.temperature,
         )),
       )
     yield ()

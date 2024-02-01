@@ -1,34 +1,26 @@
 package es.eriktorr.weather
 package domain
 
-import data.validated.ValidatedNecExtensions.validatedNecTo
-import domain.Measurement.{StationName, Temperature}
-
 import cats.effect.{IO, Ref}
-import cats.implicits.catsSyntaxTuple2Semigroupal
 import fs2.Stream
 import fs2.io.file.{Files, Path}
 
 object MeasurementsAnalyser:
   def analyse(
       measurementsPath: Path,
-      statsRef: Ref[IO, Map[StationName, Stats]],
+      statsRef: Ref[IO, Map[String, Stats]],
+      maxRows: Long = 1_000_000_000L,
   ): Stream[IO, Unit] =
     Files[IO]
       .readUtf8Lines(measurementsPath)
-      .filter(_.trim.nn.nonEmpty)
+      .take(maxRows)
       .flatMap(measurementFrom)
       .evalMap(temperatureStats(_, statsRef))
 
-  private def measurementFrom(line: String): Stream[IO, Measurement] =
+  private def measurementFrom(line: String): Stream[IO, (String, Double)] =
     import scala.language.unsafeNulls
     line.split(";", 2).toList match
-      case stationName :: temperature :: Nil =>
-        Stream.eval(
-          (StationName.from(stationName), Temperature.from(temperature))
-            .mapN(Measurement.apply)
-            .validated,
-        )
+      case stationName :: temperature :: Nil => Stream.emit((stationName, temperature.toDouble))
       case _ =>
         Stream.raiseError(
           IllegalArgumentException(
@@ -38,21 +30,22 @@ object MeasurementsAnalyser:
         )
 
   private def temperatureStats(
-      measurement: Measurement,
-      statsRef: Ref[IO, Map[StationName, Stats]],
+      measurement: (String, Double),
+      statsRef: Ref[IO, Map[String, Stats]],
   ): IO[Unit] =
+    val (stationName, temperature) = measurement
     for
       stationNameToStats <- statsRef.get
       currentStats = stationNameToStats.getOrElse(
-        measurement.stationName,
-        Stats(0L, measurement.temperature, measurement.temperature, 0.0d),
+        stationName,
+        Stats(0L, temperature, temperature, 0.0d),
       )
       _ <- statsRef.update(
-        _ + (measurement.stationName -> Stats(
+        _ + (stationName -> Stats(
           count = currentStats.count + 1L,
-          min = Math.min(currentStats.min, measurement.temperature),
-          max = Math.max(currentStats.max, measurement.temperature),
-          sum = currentStats.sum + measurement.temperature,
+          min = Math.min(currentStats.min, temperature),
+          max = Math.max(currentStats.max, temperature),
+          sum = currentStats.sum + temperature,
         )),
       )
     yield ()

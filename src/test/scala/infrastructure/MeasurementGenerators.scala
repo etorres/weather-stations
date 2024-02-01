@@ -1,13 +1,14 @@
 package es.eriktorr.weather
 package infrastructure
 
-import domain.Measurement.{StationName, Temperature}
+import spec.StringGenerators.alphaNumericStringBetween
 
-import es.eriktorr.weather.spec.StringGenerators.alphaNumericStringBetween
 import org.scalacheck.Gen
 
-object MeasurementGenerators:
-  def stationNameGen: Gen[StationName] =
-    alphaNumericStringBetween(5, 10).map(StationName.unsafeFrom)
+import scala.math.BigDecimal.RoundingMode
 
-  def temperatureGen: Gen[Temperature] = Gen.choose(-99.0d, 99.0d).map(Temperature.unsafeFrom)
+object MeasurementGenerators:
+  def stationNameGen: Gen[String] = alphaNumericStringBetween(5, 10)
+
+  def temperatureGen: Gen[Double] =
+    Gen.choose(-99.0d, 99.0d).map(x => BigDecimal(x).setScale(2, RoundingMode.HALF_UP).doubleValue)

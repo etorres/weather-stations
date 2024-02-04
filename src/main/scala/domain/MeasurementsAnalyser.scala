@@ -30,8 +30,8 @@ object MeasurementsAnalyser:
         .parJoin(parallelism)
         .compile
         .toList
-      statsByBucket <- processorToStatsRef.values.toList.traverse(_.get)
-      allStats = statsByBucket.fold(Map.empty) { case (x, y) =>
+      statsByProcessor <- processorToStatsRef.values.toList.traverse(_.get)
+      allStats = statsByProcessor.fold(Map.empty) { case (x, y) =>
         x ++ y.toList.map { case (stationName, stats) =>
           x.get(stationName) match
             case Some(other) =>

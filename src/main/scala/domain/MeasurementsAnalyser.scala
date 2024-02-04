@@ -13,11 +13,10 @@ object MeasurementsAnalyser:
   def analyse(
       measurementsPath: Path,
       statsRef: Ref[IO, Map[StationName, Stats]],
-      maxRows: Long = 1_000_000_000L,
   ): Stream[IO, Unit] =
     Files[IO]
       .readUtf8Lines(measurementsPath)
-      .take(maxRows)
+      .filter(_.trim.nn.nonEmpty)
       .flatMap(measurementFrom)
       .evalMap(temperatureStats(_, statsRef))
 

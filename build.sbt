@@ -46,6 +46,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "co.fs2" %% "fs2-core" % "3.9.4",
       "co.fs2" %% "fs2-io" % "3.9.4",
+      "com.softwaremill.diffx" %% "diffx-munit" % "0.9.0" % Test,
       "org.typelevel" %% "cats-core" % "2.10.0",
       "org.typelevel" %% "cats-effect" % "3.5.3",
       "org.typelevel" %% "cats-effect-kernel" % "3.5.3",

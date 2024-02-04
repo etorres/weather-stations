@@ -2,19 +2,51 @@ package es.eriktorr.weather
 package domain
 
 import cats.effect.{IO, Ref}
-import fs2.Stream
+import cats.implicits.toTraverseOps
 import fs2.io.file.{Files, Path}
+import fs2.Stream
 
 object MeasurementsAnalyser:
   def analyse(
       measurementsPath: Path,
-      statsRef: Ref[IO, Map[String, Stats]],
-      maxRows: Long = 1_000_000_000L,
-  ): Stream[IO, Unit] =
-    Files[IO]
-      .readUtf8Lines(measurementsPath)
-      .take(maxRows)
-      .evalMap(updateStatsWith(_, statsRef))
+      maxRows: Int = 1_000_000_000,
+      parallelism: Int = 2,
+  ): IO[Map[String, Stats]] =
+    for
+      processorToStatsRef <- Range(0, parallelism).toList
+        .traverse(processor =>
+          Ref.of[IO, Map[String, Stats]](Map.empty[String, Stats]).map(processor -> _),
+        )
+        .map(_.toMap)
+      _ <- Stream
+        .range(0, parallelism)
+        .map(processor =>
+          Files[IO]
+            .readUtf8Lines(measurementsPath)
+            .take(maxRows)
+            .filter(_.charAt(0).toInt % parallelism == processor)
+            .evalMap(updateStatsWith(_, processorToStatsRef(processor))),
+        )
+        .parJoin(parallelism)
+        .compile
+        .toList
+      statsByBucket <- processorToStatsRef.values.toList.traverse(_.get)
+      allStats = statsByBucket.fold(Map.empty) { case (x, y) =>
+        x ++ y.toList.map { case (stationName, stats) =>
+          x.get(stationName) match
+            case Some(other) =>
+              val updatedStats =
+                Stats(
+                  count = stats.count + other.count,
+                  min = Math.min(stats.min, other.min),
+                  max = Math.max(stats.max, other.max),
+                  sum = stats.sum + other.sum,
+                )
+              stationName -> updatedStats
+            case None => stationName -> stats
+        }.toMap
+      }
+    yield allStats
 
   private def updateStatsWith(line: String, statsRef: Ref[IO, Map[String, Stats]]) =
     import scala.language.unsafeNulls

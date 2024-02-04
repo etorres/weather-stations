@@ -1,11 +1,14 @@
 package es.eriktorr.weather
 package domain
 
-import domain.MeasurementsAnalyserSuite.testCaseGen
+import domain.MeasurementsAnalyserSuite.{given_Diff_Stats, testCaseGen}
 import infrastructure.MeasurementGenerators.{stationNameGen, temperatureGen}
 
-import cats.effect.{IO, Ref}
+import cats.effect.IO
 import cats.implicits.toTraverseOps
+import com.softwaremill.diffx.Diff
+import com.softwaremill.diffx.generic.AutoDerivation
+import com.softwaremill.diffx.munit.DiffxAssertions.*
 import fs2.io.file.Files
 import fs2.{text, Stream}
 import munit.{CatsEffectSuite, ScalaCheckEffectSuite}
@@ -28,14 +31,14 @@ final class MeasurementsAnalyserSuite extends CatsEffectSuite with ScalaCheckEff
           .through(Files[IO].writeAll(tempFile))
           .compile
           .drain
-        statsRef <- Ref.of[IO, Map[String, Stats]](Map.empty[String, Stats])
-        _ <- MeasurementsAnalyser.analyse(tempFile, statsRef).compile.drain
-        obtained <- statsRef.get
-      yield assert(obtained == testCase.expected)
+        obtained <- MeasurementsAnalyser.analyse(tempFile)
+      yield assertEqual(obtained, testCase.expected)
 
   private lazy val tempFileFixture = ResourceFixture(Files[IO].tempFile)
 
-object MeasurementsAnalyserSuite:
+object MeasurementsAnalyserSuite extends AutoDerivation:
+  given Diff[Stats] = Diff.summon[Stats].modify(_.sum).setTo(Diff.approximate(epsilon = 0.01d))
+
   final private case class TestCase(
       measurements: List[(String, Double)],
       expected: Map[String, Stats],
@@ -47,7 +50,7 @@ object MeasurementsAnalyserSuite:
     measurements <- stationNames.toList
       .flatTraverse(stationName =>
         for
-          size <- Gen.choose(3, 7)
+          size <- Gen.choose(3, 17)
           temperatures <- Gen.containerOfN[List, Double](size, temperatureGen)
           measurements = temperatures.map((stationName, _))
         yield measurements,

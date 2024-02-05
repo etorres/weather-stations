@@ -40,19 +40,15 @@ object MeasurementsAnalyser:
   private def temperatureStats(
       measurement: Measurement,
       statsRef: Ref[IO, Map[StationName, Stats]],
-  ): IO[Unit] =
-    for
-      stationNameToStats <- statsRef.get
-      currentStats = stationNameToStats.getOrElse(
-        measurement.stationName,
-        Stats(0L, measurement.temperature, measurement.temperature, 0.0d),
-      )
-      _ <- statsRef.update(
-        _ + (measurement.stationName -> Stats(
-          count = currentStats.count + 1L,
-          min = Math.min(currentStats.min, measurement.temperature),
-          max = Math.max(currentStats.max, measurement.temperature),
-          sum = currentStats.sum + measurement.temperature,
-        )),
-      )
-    yield ()
+  ): IO[Unit] = statsRef.update { stationNameToStats =>
+    val currentStats = stationNameToStats.getOrElse(
+      measurement.stationName,
+      Stats(0L, measurement.temperature, measurement.temperature, 0.0d),
+    )
+    stationNameToStats + (measurement.stationName -> Stats(
+      count = currentStats.count + 1L,
+      min = Math.min(currentStats.min, measurement.temperature),
+      max = Math.max(currentStats.max, measurement.temperature),
+      sum = currentStats.sum + measurement.temperature,
+    ))
+  }
